@@ -252,6 +252,11 @@ class TwoDOFRobot():
 
         # insert your code here
 
+        if not radians:
+            self.theta = np.array(theta) * PI / 180
+        else:
+            self.theta = theta
+
         ########################################
 
 
@@ -334,16 +339,19 @@ class TwoDOFRobot():
 
         # Replace the placeholder values with your code
 
+        
+
 
         placeholder_value = [0.0, 0.0, 0.0]
 
 
         # Base position
-        self.points[0] = placeholder_value
+        self.points[0] = [0.0, 0.0, 0.0]
         # Shoulder joint
-        self.points[1] = placeholder_value
+        self.points[1] = [self.l1 * cos(self.theta[0]), self.l1 * sin(self.theta[0]), 0.0]
         # Elbow joint
-        self.points[2] = placeholder_value
+        self.points[2] = [self.l1 * cos(self.theta[0]) + self.l2 * cos(self.theta[0] + self.theta[1]),
+                          self.l1 * sin(self.theta[0]) + self.l2 * sin(self.theta[0] + self.theta[1]), 0.0]
 
         ########################################
 
