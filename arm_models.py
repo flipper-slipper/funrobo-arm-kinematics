@@ -1,7 +1,8 @@
 from math import sin, cos
+import math
 import numpy as np
 from matplotlib.figure import Figure
-from helper_fcns.utils import EndEffector, rotm_to_euler
+from helper_fcns.utils import EndEffector, dh_to_matrix, rotm_to_euler
 
 PI = 3.1415926535897932384
 np.set_printoptions(precision=3)
@@ -274,10 +275,18 @@ class TwoDOFRobot():
         """
         x, y = EE.x, EE.y
         l1, l2 = self.l1, self.l2
+        L = math.sqrt(x**2 + y**2)
 
         ########################################
 
         # insert your code here
+
+        beta = np.arccos((l1**2 + l2**2 - L*L) / (2*l1*l2))
+        theta2 = np.pi - beta
+        alpha = np.arctan2(l2*sin(theta2), l1+l2*cos(theta2))
+        theta1 = np.arctan2(y, x) - alpha
+
+        self.theta = [theta1, theta2]
 
         ########################################
         
@@ -353,11 +362,7 @@ class TwoDOFRobot():
         self.points[2] = [self.l1 * cos(self.theta[0]) + self.l2 * cos(self.theta[0] + self.theta[1]),
                           self.l1 * sin(self.theta[0]) + self.l2 * sin(self.theta[0] + self.theta[1]), 0.0]
 
-        ########################################
-
-
-
-
+        #####################################
 
         # Update end effector position
         self.ee.x = self.points[2][0]
@@ -411,8 +416,18 @@ class ScaraRobot():
         self.points = [None] * self.num_points
 
         # Transformation matrices (DH parameters and resulting transformation)
-        self.DH = np.zeros((5, 4))  # Denavit-Hartenberg parameters (theta, d, a, alpha)
+        theta1 = self.theta[0]
+        theta2 = self.theta[1]
+        theta3 = self.theta[2]
+        self.DH = [
+            [theta1, self.l1, self.l2, 0],
+            [theta2, self.l3 - self.l5, self.l4, 0],
+            [0, -theta3, 0, PI]
+        ]
+        
         self.T = np.zeros((self.num_dof, 4, 4))  # Transformation matrices
+        for row in range(self.num_dof):
+            self.T[row] = dh_to_matrix(self.DH[row])
 
         ########################################
 
@@ -432,6 +447,10 @@ class ScaraRobot():
         ########################################
 
         # insert your code here
+        if not radians:
+            self.theta = np.array(theta) * PI / 180
+        else:
+            self.theta = theta
 
         ########################################
 
@@ -453,6 +472,16 @@ class ScaraRobot():
         ########################################
 
         # insert your code here
+        L = np.sqrt(x**2 + y**2)
+
+        beta = np.arccos((l2**2 + l4**2 - L*L) / (2*l2*l4))
+        theta2 = np.pi - beta
+        alpha = np.arctan2(l4*sin(theta2), l2+l4*cos(theta2))
+        theta1 = np.arctan2(y, x) - alpha
+
+        theta3 = l1 + l3 - l5 - z
+
+        self.theta = [theta1, theta2, theta3]
 
         ########################################
 
@@ -483,6 +512,16 @@ class ScaraRobot():
         Updates the robot's points array and end-effector position.
         """
 
+        self.DH = [
+            [self.theta[0], self.l1, self.l2, 0],
+            [self.theta[1], self.l3 - self.l5, self.l4, 0],
+            [0, -self.theta[2], 0, PI]
+        ]
+        
+        for row in range(self.num_dof):
+            self.T[row] = dh_to_matrix(self.DH[row])
+
+        
         # Calculate transformation matrices for each joint and end-effector
         self.points[0] = np.array([0, 0, 0, 1])
         self.points[1] = np.array([0, 0, self.l1, 1])
@@ -558,6 +597,21 @@ class FiveDOFRobot:
 
         # insert your additional code here
 
+        self.DH = [
+            [self.theta[0], self.l1, 0, np.pi/2],
+            [self.theta[1], 0, self.l1, np.pi/2],
+            [self.theta[2], 0, self.l2, np.pi/2],
+            [self.theta[3], 0, self.l3, -np.pi/2],
+            [self.theta[4], self.l4, 0, 0],
+        ]
+
+        
+        for row in range(self.num_dof):
+            self.T[row] = dh_to_matrix(self.DH[row])
+
+            
+            
+
         ########################################
 
     
@@ -572,6 +626,23 @@ class FiveDOFRobot:
         ########################################
 
         # insert your code here
+
+        if not radians:
+            self.theta = np.array(theta) * PI / 180
+        else:
+            self.theta = theta
+
+        self.DH = [
+            [self.theta[0], self.l1, 0, np.pi/2],
+            [self.theta[1], 0, self.l1, np.pi/2],
+            [self.theta[2], 0, self.l2, np.pi/2],
+            [self.theta[3], 0, self.l3, -np.pi/2],
+            [self.theta[4], self.l4, 0, 0],
+        ]
+
+        
+        for row in range(self.num_dof):
+            self.T[row] = dh_to_matrix(self.DH[row])
 
         ########################################
         
@@ -612,15 +683,70 @@ class FiveDOFRobot:
         Args:
             vel: Desired end-effector velocity (3x1 vector).
         """
-        ########################################
+        # Recompute robot points based on updated joint angles
+        T_cumulative = [np.eye(4)]
+        for i in range(self.num_dof):
+            T_cumulative.append(T_cumulative[-1] @ self.T[i])
 
-        # insert your code here
+        d = T_cumulative[-1] @ np.vstack([0, 0, 0, 1])  # End-effector position
 
-        ########################################
+        jacobian = np.zeros((self.num_dof, 3))
+
+        # Calculate the Jacobian by applying the cumulative transformations
+        for i in range(self.num_dof):
+            T_i = T_cumulative[i]
+            z = T_i[:3, 2]  # Z-axis of the joint
+            d1 = T_i @ np.vstack([0, 0, 0, 1])  # Position of the joint
+            r = d[:3] - d1[:3]  # Vector from the joint to the end-effector
+            jacobian[i, :] = np.cross(z, r)  # Cross product for the Jacobian
+
+        # Calculate joint velocities using the pseudo-inverse of the Jacobian
+        J_inv = np.linalg.pinv(jacobian)
+        theta_dot = np.dot(np.array(vel), J_inv)
+
+        # Use time step to update joint angles
+        dt = 0.01
+        self.theta = self.theta + (theta_dot * dt)  # Update joint angles
 
         # Recompute robot points based on updated joint angles
         self.calc_forward_kinematics(self.theta, radians=True)
 
+
+    # def calc_velocity_kinematics(self, vel: list):
+    #     """
+    #     Calculate the joint velocities required to achieve the given end-effector velocity.
+        
+    #     Args:
+    #         vel: Desired end-effector velocity (3x1 vector).
+    #     """
+    #     # Recompute robot points based on updated joint angles
+
+
+    #     T_cumulative = [np.eye(4)]
+    #     for i in range(self.num_dof):
+    #         T_cumulative.append(T_cumulative[-1] @ self.T[i])
+
+    #     d = T_cumulative[-1] @ np.vstack([0, 0, 0, 1])
+    #     print(d)
+
+    #     J = np.zeros((5, 3))
+
+    #     # Calculate the robot points by applying the cumulative transformations
+    #     for i in range(0, 5):
+    #         T_i = T_cumulative[i]
+    #         z = T_i @ np.vstack([0, 0, 1, 0])
+    #         d1 = T_i @ np.vstack([0, 0, 0, 1])
+    #         r = np.array([d[0] - d1[0], d[1] - d1[1], d[2] - d1[2]]).flatten()
+    #         J[i] = np.cross(z[:3].flatten(), r.flatten())
+            
+
+    #     J_inv = np.linalg.pinv(J)
+    #     theta_dot = np.dot(np.array(vel), J_inv)
+
+    #     dt = 0.01
+    #     self.theta = self.theta + (theta_dot * dt)
+        
+    #     self.calc_forward_kinematics(self.theta, radians=True)
 
     def calc_robot_points(self):
         """ Calculates the main arm points using the current joint angles """
